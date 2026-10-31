@@ -1,0 +1,723 @@
+{
+  "name": "Project 04 - Simple Invoice Approval Demo",
+  "nodes": [
+    {
+      "id": "dbb42634-c997-4174-8d3d-215a3bc5fee6",
+      "name": "01 Upload PDF",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "simple-finance-invoice",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "dcbbe3c6-6e17-411b-9f3e-3631ee62c797",
+      "name": "02 Check PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        470,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const x=$input.first(); const bin=x.binary||{}; const k=Object.keys(bin).find(k=>bin[k].mimeType==='application/pdf'||(bin[k].fileName||'').toLowerCase().endsWith('.pdf'));if(!k) return [{json:{valid:false,message:'Upload multipart/form-data PDF using field file; binary PDF required'}}];return [{json:{valid:true,upload_filename:bin[k].fileName||'invoice.pdf'},binary:{data:bin[k]}}];"
+      }
+    },
+    {
+      "id": "61821a7b-0da2-4468-a164-2eb430c23637",
+      "name": "03 PDF valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        700,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "961885b4-b712-4a56-98d8-b54bd43cc8c8",
+              "leftValue": "={{ $json.valid === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "65ed99c4-dfec-44ef-baba-076a336547e1",
+      "name": "04 Read PDF",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        940,
+        240
+      ],
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "data",
+        "options": {}
+      }
+    },
+    {
+      "id": "f408eea8-85ed-44c3-9f59-799d58b11ecd",
+      "name": "05 Read invoice fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1170,
+        240
+      ],
+      "parameters": {
+        "jsCode": "const d=$input.first().json;const t=String(d.text||d.data||'');const pick=(re)=>{const m=t.match(re);return m?m[1].trim():''};const money=s=>Number(String(s||'0').replace(/,/g,''));const invoice_number=pick(/Invoice\\s*(?:Number|No\\.?)[\\s:]*(INV[- ]?\\d{4,10}(?:[- ]?\\d{2,10})?|[A-Z]{2,4}[- ]?\\d{4,8})/i);const po_number=pick(/PO\\s*(?:Reference|Number|No\\.?)[\\s:]*((?:PO-?)\\d{5,8})/i);const tax_identifier=pick(/(?:GSTIN\\s*\\/\\s*Tax ID|GSTIN|Tax ID|VAT ID)\\s*:\\s*([A-Z0-9]{8,20})/i);const vendor_name=pick(/Vendor\\s*Name\\s*:\\s*([^\\r\\n]+)/i)||pick(/^\\s*([A-Z][A-Z &.]{5,})\\s*$/m);const date_raw=pick(/Invoice\\s*Date\\s*:\\s*(\\d{1,2}[/-]\\d{1,2}[/-]\\d{4}|\\d{4}-\\d{2}-\\d{2})/i);let invoice_date=date_raw;if(/^\\d{2}[/-]\\d{2}[/-]\\d{4}$/.test(date_raw)){const p=date_raw.split(/[/-]/);invoice_date=`${p[2]}-${p[1]}-${p[0]}`;}const invoiced_subtotal=money(pick(/SUBTOTAL\\s*AMOUNT\\s*:\\s*([\\d,.]+)/i));const invoiced_tax=money(pick(/(?:GST\\s*TAX(?:\\s*\\(\\d+%\\))?|TAX\\s*AMOUNT)\\s*:\\s*([\\d,.]+)/i));const invoiced_total=money(pick(/INVOICE\\s*TOTAL\\s*:\\s*([\\d,.]+)/i));const items=[];for(const line of t.split(/\\r?\\n/)){const m=line.match(/^\\s*\\d+\\.\\s+(.+?)\\s+Qty:\\s*(\\d+)\\s+Unit\\s*Price:\\s*([\\d,.]+)\\s+Total:\\s*([\\d,.]+)/i);if(m)items.push({description:m[1].trim(),quantity:Number(m[2]),unit_price:money(m[3]),amount:money(m[4])});}const item_sum=items.reduce((s,a)=>s+a.amount,0);const checksum_variance=Math.round(Math.abs(invoiced_subtotal+invoiced_tax-invoiced_total)*100)/100;const line_variance=Math.round(Math.abs(item_sum-invoiced_subtotal)*100)/100;const valid=!!invoice_number&&!!po_number&&!!vendor_name&&!!tax_identifier&&!!invoice_date&&invoiced_total>0&&items.length>0&&checksum_variance<=0.05&&line_variance<=0.05;return [{json:{invoice_number,normalized_invoice_number:invoice_number.toUpperCase().replace(/[^A-Z0-9]/g,''),po_number:po_number.toUpperCase(),tax_identifier,vendor_name,invoice_date,invoiced_subtotal,invoiced_tax,invoiced_total,items,item_sum,checksum_variance,line_variance,valid,validation_error:valid?'':'Missing invoice fields, line items or invalid subtotal/tax/total checksum',source_text:t.slice(0,12000)}}];"
+      }
+    },
+    {
+      "id": "0c82ad7e-5e33-4ad3-8fc3-f0643dccad71",
+      "name": "06 Invoice valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        240
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "57b7ed0c-98c9-4ab8-8c9a-c8be8e4d1a3a",
+              "leftValue": "={{ $json.valid === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d74457e2-753e-42f6-82c0-bde1d747d27c",
+      "name": "07 Load finance records",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1640,
+        240
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT 'vendor' AS record_type,v.vendor_id,v.legal_name,v.tax_identifier,v.is_active,NULL::text AS po_number,NULL::text AS po_vendor_id,NULL::numeric AS po_total,NULL::integer AS qty_received,NULL::integer AS gr_count,NULL::text AS invoice_number FROM public.vendors v UNION ALL SELECT 'po',NULL,NULL,NULL,NULL,p.po_number,p.vendor_id,p.total_amount,COALESCE((SELECT SUM(g.quantity_received)::integer FROM public.goods_receipts g WHERE g.po_number=p.po_number AND g.inspection_passed),0),COALESCE((SELECT COUNT(*)::integer FROM public.goods_receipts g WHERE g.po_number=p.po_number AND g.inspection_passed),0),NULL FROM public.purchase_orders p WHERE p.po_number=$1 UNION ALL SELECT 'invoice',i.vendor_id,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,i.invoice_number FROM public.invoices i WHERE i.po_number=$1;",
+        "options": {
+          "queryReplacement": "={{ [$('05 Read invoice fields').first().json.po_number] }}"
+        }
+      }
+    },
+    {
+      "id": "c5f25b2c-7628-47e1-8fea-1820411173bc",
+      "name": "08 Check vendor, duplicate and PO",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1870,
+        240
+      ],
+      "parameters": {
+        "jsCode": "const inv=$('05 Read invoice fields').first().json;const rows=$input.all().map(x=>x.json);const norm=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');const lev=(a,b)=>{const v=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){let prev=v[0];v[0]=i;for(let j=1;j<=b.length;j++){const old=v[j];v[j]=Math.min(v[j]+1,v[j-1]+1,prev+(a[i-1]===b[j-1]?0:1));prev=old;}}return v[b.length]};const clean=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9 ]/g,' ').replace(/\\s+/g,' ').trim();let best=null,score=0;for(const v of rows.filter(r=>r.record_type==='vendor'&&r.is_active)){const a=clean(inv.vendor_name),b=clean(v.legal_name);const s=100*(1-lev(a,b)/Math.max(a.length,b.length,1));if(s>score){score=s;best=v;}}const po=rows.find(r=>r.record_type==='po');const duplicate=!!best&&rows.some(r=>r.record_type==='invoice'&&r.vendor_id===best.vendor_id&&norm(r.invoice_number)===norm(inv.invoice_number));const qty=inv.items.reduce((s,i)=>s+i.quantity,0);const amountDiff=Math.abs(inv.invoiced_total-Number(po?.po_total||0));let reason='MATCH_OK';if(!best||score<80||norm(best.tax_identifier)!==norm(inv.tax_identifier))reason='UNKNOWN_VENDOR';else if(duplicate)reason='DUPLICATE_INVOICE';else if(!po||po.po_vendor_id!==best.vendor_id)reason='PO_NOT_FOUND_OR_WRONG_VENDOR';else if(Number(po.gr_count)<1)reason='GOODS_RECEIPT_MISSING';else if(Number(po.qty_received)<qty)reason='QUANTITY_DISCREPANCY';else if(amountDiff>Number(po.po_total)*0.01)reason='AMOUNT_DISCREPANCY';return [{json:{...inv,vendor_id:best?.vendor_id||null,vendor_similarity:Number(score.toFixed(1)),po_total:Number(po?.po_total||0),quantity_received:Number(po?.qty_received||0),quantity_invoiced:qty,computed_variance:Number(amountDiff.toFixed(2)),status:reason,ready_for_approval:reason==='MATCH_OK'}}];"
+      }
+    },
+    {
+      "id": "d55449cb-00f9-4fd2-b2e7-06cf4754700f",
+      "name": "09 Checks passed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        240
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cb62d29c-934b-4cac-b594-e4fc7b4015fc",
+              "leftValue": "={{ $json.ready_for_approval }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "23ca4101-6da8-48d0-8760-939031385b5c",
+      "name": "10 Save pending invoice",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2340,
+        160
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.invoices(vendor_id,po_number,invoice_number,invoice_date,invoiced_subtotal,invoiced_tax,invoiced_total,computed_variance,match_status,approval_status) VALUES($1,$2,$3,$4::date,$5,$6,$7,$8,'MATCH_OK','PENDING_MANAGER') ON CONFLICT DO NOTHING RETURNING invoice_id,invoice_number,invoiced_total;",
+        "options": {
+          "queryReplacement": "={{ [$('08 Check vendor, duplicate and PO').first().json.vendor_id,$('08 Check vendor, duplicate and PO').first().json.po_number,$('08 Check vendor, duplicate and PO').first().json.invoice_number,$('08 Check vendor, duplicate and PO').first().json.invoice_date,$('08 Check vendor, duplicate and PO').first().json.invoiced_subtotal,$('08 Check vendor, duplicate and PO').first().json.invoiced_tax,$('08 Check vendor, duplicate and PO').first().json.invoiced_total,$('08 Check vendor, duplicate and PO').first().json.computed_variance] }}"
+        }
+      }
+    },
+    {
+      "id": "d5184a73-fd44-4adc-aa90-552aa1a96816",
+      "name": "11 Email manager approval link",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2580,
+        160
+      ],
+      "parameters": {
+        "fromEmail": "REPLACE_WITH_SENDER_EMAIL",
+        "toEmail": "REPLACE_WITH_MANAGER_EMAIL",
+        "subject": "={{ \"Invoice approval: \" + $json.invoice_number }}",
+        "emailFormat": "text",
+        "text": "={{ \"Please review invoice \" + $json.invoice_number + \" for \" + $json.invoiced_total + \". Open this link to approve: \" + $execution.resumeUrl + \"?decision=approve . To reject use: \" + $execution.resumeUrl + \"?decision=reject\" }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "f161d9f7-bada-4102-9255-c5e01ef39e9e",
+      "name": "12 Wait for manager",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2810,
+        160
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "webhookMethod": "GET",
+        "options": {}
+      }
+    },
+    {
+      "id": "ddc71377-c530-4a9f-a6c0-02cec5f387fb",
+      "name": "13 Manager approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3040,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "52a4e91a-b7d4-403c-a52c-fa6ef0951df1",
+              "leftValue": "={{ $json.query.decision || $json.body.decision || \"\" }}",
+              "rightValue": "approve",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e6ae5491-ce17-4e52-8b07-c30c6f8cbd70",
+      "name": "14 CFO needed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3270,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2d761483-9872-4601-be06-a97c2d735441",
+              "leftValue": "={{ Number($('08 Check vendor, duplicate and PO').first().json.invoiced_total) }}",
+              "rightValue": 50000,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "bff0adb9-4e18-460b-94cf-be733df311cf",
+      "name": "15 Email CFO approval link",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        3500,
+        20
+      ],
+      "parameters": {
+        "fromEmail": "REPLACE_WITH_SENDER_EMAIL",
+        "toEmail": "REPLACE_WITH_CFO_EMAIL",
+        "subject": "={{ 'CFO approval: ' + $('08 Check vendor, duplicate and PO').first().json.invoice_number }}",
+        "emailFormat": "text",
+        "text": "={{ 'Manager approved. CFO approval required for invoice ' + $('08 Check vendor, duplicate and PO').first().json.invoice_number + '. Approve: ' + $execution.resumeUrl + '?decision=approve  Reject: ' + $execution.resumeUrl + '?decision=reject' }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "ca848043-38a8-4383-b210-e38fe76cb8a5",
+      "name": "16 Wait for CFO",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3730,
+        20
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "webhookMethod": "GET",
+        "options": {}
+      }
+    },
+    {
+      "id": "34fa3017-52fe-4cba-91be-bab953b7f337",
+      "name": "17 CFO approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3960,
+        20
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "458a5e43-d856-45e7-ba2c-22d7a9821e2b",
+              "leftValue": "={{ $json.query.decision || $json.body.decision || \"\" }}",
+              "rightValue": "approve",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "5762e586-01f6-4149-bf1b-5aebb7ce9538",
+      "name": "18 Mark approved",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        4210,
+        160
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.invoices SET approval_status='APPROVED',approved_by=$2 WHERE invoice_id=$1::uuid AND approval_status='PENDING_MANAGER' RETURNING invoice_id,invoice_number,invoiced_total,approval_status;",
+        "options": {
+          "queryReplacement": "={{ [$('10 Save pending invoice').first().json.invoice_id,Number($('08 Check vendor, duplicate and PO').first().json.invoiced_total)>=50000?'Manager + CFO':'Manager'] }}"
+        }
+      }
+    },
+    {
+      "id": "91e4c223-4781-43f0-bdd0-7a6c78261434",
+      "name": "19 Mock ERP voucher",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4450,
+        160
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json; if(r.approval_status!=='APPROVED')throw Error('Invoice not approved');return [{json:{...r,erp_voucher_id:'DEMO-ERP-'+String(r.invoice_id).slice(0,8),erp_status:'SIMULATED_EXPORT'}}];"
+      }
+    },
+    {
+      "id": "32b51fa5-0976-4ce6-b030-07683cb77b57",
+      "name": "20 Demo result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4690,
+        160
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;return [{json:{message:'Demo complete. Invoice approved and mock ERP voucher generated.',...r,note:'Mock ERP is simulated in this Code node; no payment is made.'}}];"
+      }
+    },
+    {
+      "id": "1334559a-b15b-44f1-a471-7f8b8df2c3c9",
+      "name": "Rejected or exception",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2350,
+        390
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{status:'STOPPED',reason:$('08 Check vendor, duplicate and PO').first().json.status,detail:'Invoice was not sent for approval.'}}];"
+      }
+    },
+    {
+      "id": "4eeba81e-734d-45ea-910c-076d54317c46",
+      "name": "Approval rejected",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        4220,
+        390
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.invoices SET approval_status='REJECTED' WHERE invoice_id=$1::uuid RETURNING invoice_id,approval_status;",
+        "options": {
+          "queryReplacement": "={{ [$('10 Save pending invoice').first().json.invoice_id] }}"
+        }
+      }
+    },
+    {
+      "id": "c81de906-9748-4a81-b282-35ab91221e72",
+      "name": "Invalid input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1640,
+        510
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{status:'INVALID_INPUT',message:'PDF missing or invoice data/checksum invalid'}}];"
+      }
+    }
+  ],
+  "connections": {
+    "01 Upload PDF": {
+      "main": [
+        [
+          {
+            "node": "02 Check PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "02 Check PDF": {
+      "main": [
+        [
+          {
+            "node": "03 PDF valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "03 PDF valid?": {
+      "main": [
+        [
+          {
+            "node": "04 Read PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Invalid input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "04 Read PDF": {
+      "main": [
+        [
+          {
+            "node": "05 Read invoice fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "05 Read invoice fields": {
+      "main": [
+        [
+          {
+            "node": "06 Invoice valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "06 Invoice valid?": {
+      "main": [
+        [
+          {
+            "node": "07 Load finance records",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Invalid input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "07 Load finance records": {
+      "main": [
+        [
+          {
+            "node": "08 Check vendor, duplicate and PO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "08 Check vendor, duplicate and PO": {
+      "main": [
+        [
+          {
+            "node": "09 Checks passed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "09 Checks passed?": {
+      "main": [
+        [
+          {
+            "node": "10 Save pending invoice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejected or exception",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "10 Save pending invoice": {
+      "main": [
+        [
+          {
+            "node": "11 Email manager approval link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "11 Email manager approval link": {
+      "main": [
+        [
+          {
+            "node": "12 Wait for manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "12 Wait for manager": {
+      "main": [
+        [
+          {
+            "node": "13 Manager approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "13 Manager approved?": {
+      "main": [
+        [
+          {
+            "node": "14 CFO needed?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Approval rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "14 CFO needed?": {
+      "main": [
+        [
+          {
+            "node": "15 Email CFO approval link",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "18 Mark approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "15 Email CFO approval link": {
+      "main": [
+        [
+          {
+            "node": "16 Wait for CFO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "16 Wait for CFO": {
+      "main": [
+        [
+          {
+            "node": "17 CFO approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "17 CFO approved?": {
+      "main": [
+        [
+          {
+            "node": "18 Mark approved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Approval rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "18 Mark approved": {
+      "main": [
+        [
+          {
+            "node": "19 Mock ERP voucher",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "19 Mock ERP voucher": {
+      "main": [
+        [
+          {
+            "node": "20 Demo result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
